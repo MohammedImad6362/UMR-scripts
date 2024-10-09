@@ -1,23 +1,25 @@
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
-const LMSChapter = require('../models/LMSChapter');  
-const Material = require('../models/Material');  
-const { connectToDatabase } = require('../utils/db')
+const LMSChapter = require('../models/LMSChapter');
+const Material = require('../models/Material');
+const { connectToDatabase } = require('../utils/db');
 
-// Constants for material types, file types, and levels (Adjust according to your actual constants)
+// Constants for material types, file types, and levels
 const {
   MATERIAL_TYPES,
   MATERIAL_FILE_TYPES,
   MATERIAL_LEVELS,
-} = require('../constants/index');  // Path to your constants file
+} = require('../constants/index');
+
+const FILE_DIRECTORY = path.join(__dirname, 'pdfs');
 
 // Helper function to get the file extension
 function getFileExtension(filename) {
   return filename.split('.').pop().toUpperCase();
 }
 
-// Helper function to recursively read files from directories (including subfolders)
+// Helper function to recursively read files from directories
 function getAllFiles(dir, fileList = []) {
   const files = fs.readdirSync(dir);
 
@@ -37,11 +39,19 @@ function getAllFiles(dir, fileList = []) {
   return fileList;
 }
 
+// Function to log errors to a file
+function logErrorToFile(errorMessage) {
+  const logFilePath = path.join(__dirname, 'error_log.txt'); // Change path as needed
+  const timestamp = new Date().toISOString();
+  const logMessage = `${timestamp} - ${errorMessage}\n`;
+
+  fs.appendFileSync(logFilePath, logMessage, { encoding: 'utf8' });
+}
+
 // Function to upload materials to chapters based on the files in the folder
 async function uploadMaterialToChapters() {
   try {
-    await connectToDatabase()
-    // Step 1: Get all PDF files (including those in subdirectories)
+    await connectToDatabase();
     const pdfFiles = getAllFiles(FILE_DIRECTORY);
 
     if (pdfFiles.length === 0) {
@@ -49,29 +59,31 @@ async function uploadMaterialToChapters() {
       return;
     }
 
-    console.log(`Found ${pdfFiles.length} PDF files`);
+    console.log(`Found ${pdfFiles.length} PDF files.`);
 
-    // Step 2: Loop through each PDF file
     for (const filePath of pdfFiles) {
-      const fileName = path.basename(filePath, path.extname(filePath)); // Get the file name without the extension
+      let fileName = path.basename(filePath, path.extname(filePath));
+      fileName = fileName.replace(/^\d+\.\s*/, '');
 
-      // Step 3: Fetch chapters with name matching the file (using file name as regex, case-insensitive)
-      const chapters = await LMSChapter.find({ name: new RegExp(fileName, 'i') });
+      console.log(`Processing file: ${fileName}`);
+
+      const chapters = await LMSChapter.find({ name: new RegExp(fileName, 'i'), deleted:false });
 
       if (chapters.length === 0) {
         console.log(`No chapters found for file: ${fileName}`);
         continue;
       }
 
-      // Step 4: Upload material for each chapter
+      console.log(`Found ${chapters.length} chapters for file: ${fileName}`);
+
       for (const chapter of chapters) {
         const materialData = {
-          name: fileName,  // Use the file name as the material name
-          path: filePath,  // Full file path
-          fileType: MATERIAL_FILE_TYPES.PDF,  // Since it's a PDF
-          materialType: MATERIAL_TYPES.MIND_MAP,  // Example material type, adjust as needed
-          materialLevel: MATERIAL_LEVELS.CHAPTER,  // Assuming chapter level material
-          sequence: '1',  // Example sequence, adjust accordingly
+          name: fileName,
+          path: `pdf/${fileName}`,
+          fileType: MATERIAL_FILE_TYPES.PDF,
+          materialType: MATERIAL_TYPES.MIND_MAP,
+          materialLevel: MATERIAL_LEVELS.CHAPTER,
+          sequence: 1,
           courseId: chapter.courseId,
           courseName: chapter.courseName,
           subjectId: chapter.subjectId,
@@ -80,25 +92,30 @@ async function uploadMaterialToChapters() {
           chapterName: chapter.name,
         };
 
-        console.log("material", materialData)
-        // Save the material to the database
-        const material = await  Material.create(materialData);
+        console.log(`Preparing to upload material for chapter: ${chapter.name}`);
 
-        // Update the chapter to reflect that it has material
-        chapter.hasMaterial = true;
-        await chapter.save();
+        try {
+          const material = await Material.create(materialData);
+          chapter.hasMaterial = true;
+          await chapter.save();
 
-        console.log(`Uploaded material for chapter: ${chapter.name}`);
+          console.log(`Uploaded material for chapter: ${chapter.name} (Material ID: ${material._id})`);
+        } catch (uploadError) {
+          const errorMsg = `Error uploading material for chapter ${chapter.name}: ${uploadError.message}`;
+          console.error(errorMsg);
+          logErrorToFile(errorMsg);
+        }
       }
     }
 
     console.log('All materials uploaded successfully.');
   } catch (error) {
-    console.error('Error uploading materials:', error);
+    const errorMsg = `Error uploading materials: ${error.message}`;
+    console.error(errorMsg);
+    logErrorToFile(errorMsg);
   } finally {
-    // Close the MongoDB connection
     mongoose.connection.close();
   }
 }
 
-uploadMaterialToChapters()
+uploadMaterialToChapters();
