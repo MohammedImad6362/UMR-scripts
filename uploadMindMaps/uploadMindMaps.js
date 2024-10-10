@@ -48,6 +48,20 @@ function logErrorToFile(errorMessage) {
   fs.appendFileSync(logFilePath, logMessage, { encoding: 'utf8' });
 }
 
+// Helper function to extract the sequence number from the filename
+function extractSequenceNumber(filename) {
+  const match = filename.match(/^\d+/);  // Matches the leading numbers in the filename (e.g., "1. ", "2. ")
+  return match ? match[0] : '00';  // Return '00' if no number is found
+}
+
+// Function to generate the formatted filename as 'MMB11001' or 'MMB11010'
+function generateFormattedFileName(subjectName, gradeNumber, sequenceNumber) {
+  const subjectFirstLetter = subjectName.charAt(0).toUpperCase();  // First letter of the subject
+  const fileNumber = sequenceNumber < 10 ? `00${sequenceNumber}` : `0${sequenceNumber}`;  // '00' for 1-9, '0' for 10 and above
+  return `MM${subjectFirstLetter}${gradeNumber}${fileNumber}`;  // Construct the filename
+}
+
+
 // Function to upload materials to chapters based on the files in the folder
 async function uploadMaterialToChapters() {
   try {
@@ -63,11 +77,12 @@ async function uploadMaterialToChapters() {
 
     for (const filePath of pdfFiles) {
       let fileName = path.basename(filePath, path.extname(filePath));
-      fileName = fileName.replace(/^\d+\.\s*/, '');
+      const sequenceNumber = extractSequenceNumber(fileName);  // Extract the sequence number
+      fileName = fileName.replace(/^\d+\.\s*/, '');  // Clean the filename by removing leading numbers and period
 
       console.log(`Processing file: ${fileName}`);
 
-      const chapters = await LMSChapter.find({ name: new RegExp(fileName, 'i'), deleted:false });
+      const chapters = await LMSChapter.find({ name: new RegExp(fileName, 'i'), deleted: false });
 
       if (chapters.length === 0) {
         console.log(`No chapters found for file: ${fileName}`);
@@ -77,13 +92,19 @@ async function uploadMaterialToChapters() {
       console.log(`Found ${chapters.length} chapters for file: ${fileName}`);
 
       for (const chapter of chapters) {
+        // Extract the grade number directly from the course name
+        const gradeParts = chapter.courseName.split(' ');  // Split by spaces
+        const gradeNumber = gradeParts[1];  // The second part will be the grade number (e.g., "11" from "Grade 11")
+      
+        const formattedFileName = generateFormattedFileName(chapter.subjectName, gradeNumber, sequenceNumber);
+      
         const materialData = {
-          name: fileName,
-          path: `pdf/${fileName}`,
+          name: formattedFileName,  // Use the formatted filename with grade number
+          path: `pdf/${formattedFileName}`,
           fileType: MATERIAL_FILE_TYPES.PDF,
           materialType: MATERIAL_TYPES.MIND_MAP,
           materialLevel: MATERIAL_LEVELS.CHAPTER,
-          sequence: 1,
+          sequence: parseInt(sequenceNumber),  // Use the sequence number
           courseId: chapter.courseId,
           courseName: chapter.courseName,
           subjectId: chapter.subjectId,
@@ -91,14 +112,14 @@ async function uploadMaterialToChapters() {
           chapterId: chapter._id,
           chapterName: chapter.name,
         };
-
-        console.log(`Preparing to upload material for chapter: ${chapter.name}`);
-
+      
+        console.log(`Preparing to upload material for chapter: ${chapter.name} with formatted filename: ${formattedFileName}`);
+      
         try {
           const material = await Material.create(materialData);
           chapter.hasMaterial = true;
           await chapter.save();
-
+      
           console.log(`Uploaded material for chapter: ${chapter.name} (Material ID: ${material._id})`);
         } catch (uploadError) {
           const errorMsg = `Error uploading material for chapter ${chapter.name}: ${uploadError.message}`;
