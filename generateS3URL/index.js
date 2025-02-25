@@ -6,13 +6,13 @@ const fs = require('fs');
 // Configure AWS S3
 const s3 = new AWS.S3({
   region: 'ap-south-1', // Replace with your region
-  accessKeyId: 'ACCESS_KEY', // Set your access key
-  secretAccessKey: 'SECRET_ACCESS_KEY', // Set your secret key
+  accessKeyId: '', // Set your access key
+  secretAccessKey: '', // Set your secret key
 });
 
 const bucketName = 'upmyranksvideos'; // Replace with your bucket name
-const baseFolderPath = 'studymaterials/grade12/biology'; // Replace with the base folder path
-const outputDirectory = './excels/G11'; // Directory to save Excel files
+const baseFolderPath = 'studymaterials/grade12/biology/teacherpptx'; // Replace with the base folder path
+const outputDirectory = './excels/studymaterials/grade12/biology/teacherpptx'; // Directory to save Excel files
 
 // Ensure output directory exists
 if (!fs.existsSync(outputDirectory)) {
@@ -56,7 +56,7 @@ const saveToExcel = (folderName, urls) => {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'URLs');
 
-  const filePath = path.join(outputDirectory, `${folderName}.xlsx`);
+  const filePath = path.join(outputDirectory, `${ folderName }.xlsx`);
   XLSX.writeFile(workbook, filePath);
   console.log(`Excel file saved: ${filePath}`);
 };
